@@ -16,7 +16,8 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import torchvision.models as models
+#import torchvision.models as models
+import resnet_cifar10 as models
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -25,20 +26,18 @@ model_names = sorted(name for name in models.__dict__
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
-parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
+parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
                     choices=model_names,
                     help='model architecture: ' +
                         ' | '.join(model_names) +
-                        ' (default: resnet18)')
-parser.add_argument('-d', '--datasetname', type=str, default='imagenet')
-
+                        ' (default: resnet50)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=90, type=int, metavar='N',
+parser.add_argument('--epochs', default=400, type=int, metavar='N', #90
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
+parser.add_argument('-b', '--batch-size', default=128, type=int, #256
                     metavar='N',
                     help='mini-batch size (default: 256), this is the total '
                          'batch size of all GPUs on the current node when '
@@ -47,7 +46,7 @@ parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
-parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
+parser.add_argument('--wd', '--weight-decay', default=5e-4, type=float, #1e-4
                     metavar='W', help='weight decay (default: 1e-4)',
                     dest='weight_decay')
 parser.add_argument('-p', '--print-freq', default=10, type=int,
@@ -162,6 +161,35 @@ def init_imagenet_loaders(args):
 
     return train_loader, val_loader, test_loader
 
+def init_cifar10_loaders(args):
+    train_transform = transforms.Compose(
+        [
+            transforms.RandomCrop(32, padding=4),
+            #transforms.Resize(32),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        ])
+    test_transform = transforms.Compose(
+        [
+            #transforms.Resize(32),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        ])
+
+    trainset = datasets.CIFAR10(root=args.data, train=True,
+                                            download=True, transform=train_transform)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
+                                              shuffle=True, num_workers=args.workers)
+
+    testset = datasets.CIFAR10(root=args.data, train=False,
+                                           download=True, transform=test_transform)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size,
+                                             shuffle=False, num_workers=args.workers)
+
+    print("!!FIXME: setup for validation loader")
+    return trainloader, testloader, testloader
+
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
@@ -248,13 +276,7 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     # Data loading code
-    if args.datasetname == 'imagenet':
-        train_loader, val_loader, test_loader = init_imagenet_loaders(args)
-    elif args.datasetname == 'cifar10':
-        train_loader, val_loader, test_loader = init_cifar10_loaders(args)
-    else:
-        raise NotImplementedError
-        
+    train_loader, val_loader, test_loader = init_cifar10_loaders(args)    
     
     if args.evaluate:
         validate(test_loader, model, criterion, args)
@@ -423,9 +445,21 @@ class ProgressMeter(object):
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
+# def adjust_learning_rate(optimizer, epoch, args):
+#     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+#     lr = args.lr * (0.1 ** (epoch // 30))
+#     for param_group in optimizer.param_groups:
+#         param_group['lr'] = lr
+
 def adjust_learning_rate(optimizer, epoch, args):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 30))
+    if epoch < 150:
+        lr = args.lr * 1
+    elif epoch < 250:
+        lr = args.lr * 0.1
+    else:
+        lr = args.lr * 0.01
+    print(lr)
+ 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
